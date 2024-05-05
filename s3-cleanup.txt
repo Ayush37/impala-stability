@@ -1,0 +1,42 @@
+import boto3
+from datetime import datetime, timedelta
+
+# Initialize the S3 client using credentials from the ~/.aws/credentials file
+s3 = boto3.client('s3', region_name='us-east-1')
+
+# Specify the source and destination buckets
+source_bucket = 'source_bucket'
+destination_bucket = 'destination_bucket'
+
+# Specify the source and destination "folder" prefixes
+source_prefix = 'trusted/refined/test='
+destination_prefix = 'trusted/refined/test_backup/'
+
+# Calculate the date threshold (2 months ago)
+two_months_ago = datetime.now() - timedelta(days=60)
+
+# List objects in the source prefix
+objects = s3.list_objects_v2(Bucket=source_bucket, Prefix=source_prefix)
+
+# Initialize a counter
+moved_objects_count = 0
+
+# Iterate through the objects and move those created 2 months or before
+for obj in objects.get('Contents', []):
+    if moved_objects_count >= 10:
+        user_input = input(f"Paused after moving {moved_objects_count} objects. Type 'continue' to resume, or any other key to stop: ")
+        if user_input.lower() != 'continue':
+            break
+        print("Resuming...")
+    
+    object_key = obj['Key']
+    created_date = obj['LastModified'].replace(tzinfo=None)
+    
+    if created_date <= two_months_ago:
+        new_key = object_key.replace(source_prefix, destination_prefix, 1)
+        s3.copy_object(CopySource=f"{source_bucket}/{object_key}", Bucket=destination_bucket, Key=new_key)
+        s3.delete_object(Bucket=source_bucket, Key=object_key)
+        moved_objects_count += 1
+        print(f"Moved object {object_key} to {new_key}")
+
+print(f"Object move process completed. Moved {moved_objects_count} objects.")
